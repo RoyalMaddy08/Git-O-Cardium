@@ -1,0 +1,14 @@
+[project]
+name = "sphilter-ai"
+version = "0.1.0"
+description = "Security middleware that separates data from authority for AI agents"
+requires-python = ">=3.10"
+dependencies = ["pydantic>=2.5"]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.30"]
+dev = ["pytest>=7.4"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
