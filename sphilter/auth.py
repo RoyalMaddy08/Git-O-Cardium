@@ -5,6 +5,7 @@ Design:
 - Passwords are never stored: PBKDF2-HMAC-SHA256 with a per-user random salt.
 - Failed logins are throttled (5 tries, then 60 s lock), and unknown IDs look identical to wrong passwords.
 - Every login, failure, lock and logout is appended to data/auth_log.jsonl.
+- Optional second factor: if MINIMOTH_API_KEY is set, a one-time code is sent (WhatsApp, else SMS) to the officer's REGISTERED phone.
 - Officers see only scenarios whose complaint belongs to their assigned ward; supervisors see all.
 
 This is app-level demo auth. For production use SSO/OIDC over HTTPS, not a JSON file.
@@ -22,6 +23,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .minimoth import MiniMoth, MiniMothError, mask_phone, normalize_phone
 from .scenarios import RECORDS, SCENARIOS, Scenario
 
 ITER = 200_000
@@ -38,6 +40,7 @@ class Officer:
     name: str
     role: str  # "officer" (one ward) or "supervisor" (all wards)
     ward: str | None
+    phone: str | None = None  # registered mobile for the OTP second factor
 
 
 def hash_password(password: str, salt: bytes | None = None) -> dict:
@@ -69,7 +72,7 @@ class OfficerStore:
     def ids(self) -> list[str]:
         return sorted(self._load())
 
-    def add(self, uid: str, name: str, role: str, ward: str | None, password: str) -> None:
+    def add(self, uid: str, name: str, role: str, ward: str | None, password: str, phone: str | None = None) -> None:
         uid = uid.strip().lower()
         if role not in ("officer", "supervisor"):
             raise ValueError("role must be 'officer' or 'supervisor'")
@@ -79,13 +82,20 @@ class OfficerStore:
             raise ValueError("password must be at least 8 characters")
         data = self._load()
         data[uid] = {"name": name, "role": role, "ward": ward if role == "officer" else None,
-                     "pw": hash_password(password)}
+                     "phone": normalize_phone(phone) if phone else None, "pw": hash_password(password)}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(data, indent=2))
         try:
             os.chmod(self.path, 0o600)
         except OSError:
             pass
+
+    def set_phone(self, uid: str, phone: str) -> None:
+        data = self._load()
+        if uid.strip().lower() not in data:
+            raise ValueError("unknown officer")
+        data[uid.strip().lower()]["phone"] = normalize_phone(phone)
+        self.path.write_text(json.dumps(data, indent=2))
 
     def remove(self, uid: str) -> None:
         data = self._load()
@@ -97,7 +107,7 @@ class OfficerStore:
 
     def get(self, uid: str) -> Officer | None:
         r = self.record(uid)
-        return None if r is None else Officer(uid.strip().lower(), r["name"], r["role"], r["ward"])
+        return None if r is None else Officer(uid.strip().lower(), r["name"], r["role"], r["ward"], r.get("phone"))
 
 
 class Throttle:
@@ -152,6 +162,54 @@ def authenticate(store: OfficerStore, throttle: Throttle, uid: str, password: st
     return None, "Invalid officer ID or password."
 
 
+# ---------------------------------------------------------------- second factor (MiniMoth phone OTP)
+OTP_MAX_ATTEMPTS = 5
+_SEND_MSG = {
+    "OTP_RATE_LIMITED": "Too many codes requested for this phone. Please wait 10 minutes.",
+    "INSUFFICIENT_BALANCE": "The OTP service is unavailable. Contact your administrator.",
+    "INVALID_API_KEY": "The OTP service is not configured correctly. Contact your administrator.",
+    "NETWORK_ERROR": "Could not reach the OTP service. Check the internet connection and try again.",
+}
+_VERIFY_MSG = {
+    "INVALID_OTP": "Incorrect code. Check the message and try again.",
+    "OTP_NOT_FOUND": "That code has expired. Request a new one.",
+    "VERIFY_RATE_LIMITED": "Too many wrong codes. Request a new code.",
+    "INVALID_OTP_CODE": "Enter the 6-digit code.",
+    "NETWORK_ERROR": "Could not reach the OTP service. Check the internet connection and try again.",
+}
+
+
+def begin_second_factor(officer: Officer, client: MiniMoth, log_path: Path | None = None) -> tuple[bool, str]:
+    """Send a code to the officer's REGISTERED phone. Never to a number typed at the login screen."""
+    if not officer.phone:
+        log_event(officer.id, "otp_no_phone", False, log_path)
+        return False, "No mobile number is registered for your account. Contact your supervisor."
+    try:
+        client.send_otp(officer.phone)
+    except MiniMothError as e:
+        log_event(officer.id, f"otp_send_failed:{e.code}", False, log_path)
+        return False, _SEND_MSG.get(e.code, "Could not send the code. Try again shortly.")
+    log_event(officer.id, "otp_sent", True, log_path)
+    return True, ""
+
+
+def complete_second_factor(officer: Officer, code: str, client: MiniMoth,
+                           log_path: Path | None = None) -> tuple[dict | None, str]:
+    code = (code or "").strip()
+    if not (code.isdigit() and len(code) == 6) or not officer.phone:
+        return None, "Enter the 6-digit code."
+    try:
+        tokens = client.verify_otp(officer.phone, code)
+    except MiniMothError as e:
+        log_event(officer.id, f"otp_failed:{e.code}", False, log_path)
+        return None, _VERIFY_MSG.get(e.code, "Could not verify the code. Try again.")
+    if not tokens.get("access_token"):
+        log_event(officer.id, "otp_failed:NO_TOKEN", False, log_path)
+        return None, "Could not verify the code. Try again."
+    log_event(officer.id, "otp_verified", True, log_path)
+    return tokens, ""
+
+
 def visible_scenarios(officer: Officer) -> list[Scenario]:
     if officer.role == "supervisor":
         return list(SCENARIOS)
@@ -170,7 +228,8 @@ def _cli() -> None:
     a = sub.add_parser("add", help="add or update an officer")
     a.add_argument("id"); a.add_argument("--name", required=True)
     a.add_argument("--role", choices=["officer", "supervisor"], default="officer")
-    a.add_argument("--ward", choices=WARDS)
+    a.add_argument("--ward", choices=WARDS); a.add_argument("--phone", help="Indian mobile for OTP, e.g. +919876543210")
+    sp = sub.add_parser("set-phone", help="set an officer's OTP mobile number"); sp.add_argument("id"); sp.add_argument("phone")
     sub.add_parser("list"); r = sub.add_parser("remove"); r.add_argument("id")
     args = ap.parse_args()
     store = OfficerStore()
@@ -179,19 +238,21 @@ def _cli() -> None:
                 ("off.keast", "Officer K-East", "officer", "K-East"),
                 ("off.hwest", "Officer H-West", "officer", "H-West"),
                 ("off.gnorth", "Officer G-North", "officer", "G-North")]
-        print(f"Writing {store.path}\nSave these now; passwords are not stored anywhere in readable form:\n")
+        print(f"Writing {store.path}\nNext: python -m sphilter.auth set-phone <id> +91XXXXXXXXXX for each account (needed for OTP).\nSave these now; passwords are not stored anywhere in readable form:\n")
         for uid, name, role, ward in demo:
             pw = secrets.token_urlsafe(9)
             store.add(uid, name, role, ward, pw)
             print(f"  {uid:<12} {pw:<14} {role:<10} {ward or 'all wards'}")
     elif args.cmd == "add":
         pw = getpass.getpass("Password (min 8 chars): ")
-        store.add(args.id, args.name, args.role, args.ward, pw)
+        store.add(args.id, args.name, args.role, args.ward, pw, args.phone)
         print("saved", args.id)
+    elif args.cmd == "set-phone":
+        store.set_phone(args.id, args.phone); print("phone saved for", args.id)
     elif args.cmd == "list":
         for uid in store.ids():
             o = store.get(uid)
-            print(f"{o.id:<14} {o.role:<10} {o.ward or 'all wards':<10} {o.name}")
+            print(f"{o.id:<14} {o.role:<10} {o.ward or 'all wards':<10} {mask_phone(o.phone) if o.phone else 'no phone':<14} {o.name}")
     elif args.cmd == "remove":
         store.remove(args.id); print("removed", args.id)
 

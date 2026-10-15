@@ -5,6 +5,7 @@ import time
 import streamlit as st
 
 from sphilter import auth
+from sphilter.minimoth import MiniMoth, MiniMothError, mask_phone
 
 from sphilter.evaluate import run_all, run_scenario, to_markdown
 from sphilter.scenarios import BY_ID, SCENARIOS, make_task
@@ -125,8 +126,49 @@ def get_throttle():
     return auth.Throttle()
 
 
+@st.cache_resource
+def get_client():
+    """MiniMoth phone-OTP second factor. None when MINIMOTH_API_KEY is not set (password-only mode)."""
+    return MiniMoth.from_env()
+
+
 def rerun():
     (getattr(st, "rerun", None) or st.experimental_rerun)()
+
+
+def sign_out(uid, note=None):
+    client, tok = get_client(), st.session_state.get("mm_access")
+    if client and tok:
+        try:
+            client.logout(tok)
+        except MiniMothError:
+            pass  # best effort; the local session is cleared regardless
+    if uid:
+        auth.log_event(uid, "logout" if note is None else note, True)
+    st.session_state.clear()
+    if note:
+        st.session_state["flash"] = "Signed out after 30 minutes of inactivity." if note == "session_timeout" else note
+
+
+def session_still_valid():
+    """With OTP enabled, the MiniMoth token must exist and stay valid (re-checked every 2 minutes)."""
+    client = get_client()
+    if client is None:
+        return True
+    tok = st.session_state.get("mm_access")
+    if not tok:
+        return False
+    if time.time() - st.session_state.get("mm_checked", 0) < 120:
+        return True
+    try:
+        if not client.validate(tok).get("valid"):
+            fresh = client.refresh(st.session_state.get("mm_refresh", ""))
+            st.session_state["mm_access"], st.session_state["mm_refresh"] = fresh["access_token"], fresh["refresh_token"]
+    except MiniMothError as e:
+        if e.code != "NETWORK_ERROR":  # a transient outage does not kick out a signed-in officer
+            return False
+    st.session_state["mm_checked"] = time.time()
+    return True
 
 
 def current_officer(store):
@@ -134,21 +176,74 @@ def current_officer(store):
     if not uid:
         return None
     if time.time() - st.session_state.get("last_active", 0) > auth.IDLE_SECONDS:
-        auth.log_event(uid, "session_timeout", True)
-        st.session_state.clear()
-        st.session_state["flash"] = "Signed out after 30 minutes of inactivity."
+        sign_out(uid, "session_timeout")
         return None
     officer = store.get(uid)  # re-checked every run: removing an officer locks them out immediately
-    if officer is not None:
-        st.session_state["last_active"] = time.time()
+    if officer is None or not session_still_valid():
+        sign_out(uid, "Your session ended. Please sign in again.")
+        return None
+    st.session_state["last_active"] = time.time()
     return officer
 
 
+def finish_login(officer, tokens=None):
+    st.session_state.pop("pending", None)
+    st.session_state["uid"] = officer.id
+    st.session_state["last_active"] = time.time()
+    if tokens:
+        st.session_state["mm_access"] = tokens["access_token"]
+        st.session_state["mm_refresh"] = tokens.get("refresh_token", "")
+        st.session_state["mm_checked"] = time.time()
+    rerun()
+
+
+def otp_step(store, client):
+    pend = st.session_state["pending"]
+    officer = store.get(pend["uid"])
+    if officer is None:
+        st.session_state.pop("pending", None)
+        rerun()
+        return
+    st.markdown(f"<div class='card' style='margin-top:12px'><h3>Step 2 of 2: verify your phone</h3>"
+                f"A 6-digit code was sent to <b>{html.escape(mask_phone(officer.phone or ''))}</b> "
+                "(WhatsApp, or SMS if WhatsApp is not available). It expires in 10 minutes.</div>", unsafe_allow_html=True)
+    with st.form("otp"):
+        code = st.text_input("6-digit code", max_chars=6)
+        go = st.form_submit_button("Verify and sign in")
+    if go:
+        tokens, msg = auth.complete_second_factor(officer, code, client)
+        if tokens is None:
+            pend["tries"] = pend.get("tries", 0) + 1
+            if pend["tries"] >= auth.OTP_MAX_ATTEMPTS:
+                st.session_state.pop("pending", None)
+                st.session_state["flash"] = "Too many wrong codes. Please sign in again."
+                rerun()
+            else:
+                st.error(msg)
+        else:
+            finish_login(officer, tokens)
+    again, cancel = st.columns(2)
+    with again:
+        if st.button("Resend code"):
+            if time.time() - pend.get("sent_at", 0) < 30:
+                st.warning("Please wait 30 seconds before requesting another code.")
+            else:
+                ok, msg = auth.begin_second_factor(officer, client)
+                pend["sent_at"] = time.time()
+                (st.success if ok else st.error)("A new code was sent." if ok else msg)
+    with cancel:
+        if st.button("Use a different account"):
+            st.session_state.pop("pending", None)
+            rerun()
+
+
 def login_page(store):
+    client = get_client()
     _, mid, _ = st.columns([1, 1.4, 1])
     with mid:
         st.markdown("<div class='login-card'><h2>🛡️ SPHILTER-AI</h2>"
-                    "<div class='small'>Officer sign-in. Access is limited to officers assigned by the department.</div></div>",
+                    "<div class='small'>Officer sign-in. Access is limited to officers assigned by the department."
+                    + (" Two-step verification by phone is on." if client else "") + "</div></div>",
                     unsafe_allow_html=True)
         if not store.exists():
             st.markdown("<div class='note' style='margin-top:12px'><b>No officers set up yet.</b><br>"
@@ -157,18 +252,26 @@ def login_page(store):
             return
         if st.session_state.get("flash"):
             st.info(st.session_state.pop("flash"))
+        if st.session_state.get("pending"):
+            otp_step(store, client)
+            return
         with st.form("login"):
             uid = st.text_input("Officer ID")
             pw = st.text_input("Password", type="password")
-            go = st.form_submit_button("Sign in")
+            go = st.form_submit_button("Sign in" if client is None else "Continue")
         if go:
             officer, msg = auth.authenticate(store, get_throttle(), uid, pw)
             if officer is None:
                 st.error(msg)
+            elif client is None:
+                finish_login(officer)
             else:
-                st.session_state["uid"] = officer.id
-                st.session_state["last_active"] = time.time()
-                rerun()
+                ok, msg = auth.begin_second_factor(officer, client)
+                if not ok:
+                    st.error(msg)
+                else:
+                    st.session_state["pending"] = {"uid": officer.id, "sent_at": time.time(), "tries": 0}
+                    rerun()
         st.markdown("<div class='small' style='margin-top:10px'>Forgot your password or need access? "
                     "Contact your supervisor. All sign-ins are logged.</div>", unsafe_allow_html=True)
 
@@ -186,8 +289,7 @@ with bar:
                 f"{html.escape(officer.role.title())} &nbsp;·&nbsp; {html.escape(scope)}</div>", unsafe_allow_html=True)
 with out:
     if st.button("Sign out"):
-        auth.log_event(officer.id, "logout", True)
-        st.session_state.clear()
+        sign_out(officer.id)
         rerun()
 st.markdown(
     "<div class='hero'><h1>🛡️ SPHILTER-AI</h1>"

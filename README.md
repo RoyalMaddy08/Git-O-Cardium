@@ -35,6 +35,24 @@ Only assigned officers can open the dashboard. There is no sign-up page.
 - Every sign-in, failure, lock and sign-out is appended to `data/auth_log.jsonl`.
 - This is app-level demo auth. A real deployment should use SSO/OIDC over HTTPS.
 
+### Phone OTP second factor (MiniMoth)
+
+[MiniMoth](https://minimoth.dev) sends a one-time code by WhatsApp (SMS fallback) to the officer's **registered** phone.
+
+```bash
+export MINIMOTH_API_KEY=mm_test_...     # Windows: set MINIMOTH_API_KEY=mm_test_...   (key from the MiniMoth dashboard)
+python -m sphilter.auth set-phone off.keast +919876543210   # once per officer (Indian mobiles only)
+streamlit run app.py
+```
+- Flow: officer ID + password, then a 6-digit code sent to the phone on file (never to a number typed at login), then in.
+- Without `MINIMOTH_API_KEY` the app runs password-only, which works fully offline. Handy as a demo-day fallback.
+- An officer with no registered phone is refused when OTP is on; it never silently skips the second factor.
+- A wrong code 5 times ends the attempt. MiniMoth also locks a code after 5 wrong tries. Resend has a 30 s cooldown.
+- The MiniMoth session token is re-validated every 2 minutes (refreshed if stale) and revoked on sign-out. A brief network outage does not eject someone already signed in, but a fresh login always needs the service.
+- Cost per MiniMoth's site: Rs 0.35 per OTP, Rs 20 free credit. Live keys allow 3 OTPs per phone per 10 minutes, so do not spam it on stage.
+- Never commit the key. It is read from the environment only.
+- Tested against a local fake of the MiniMoth API built from its docs, not against the live service. Do one real login before the demo.
+
 ## How it works
 
 ```
@@ -54,6 +72,7 @@ Complaint/email/PDF ─► Content items tagged UNTRUSTED ─► Agent (proposes
 | `sphilter/policy.py` | Rule chain: tool granted, typed args, resource scope, destination allowlist, call budget, approval, argument grounding |
 | `sphilter/gateway.py` | `SecureGateway` (policy + execute + audit) and `DirectGateway` (unprotected baseline) |
 | `sphilter/tools.py` | Simulated tools writing to an in-memory `World`, so tests can prove denied actions changed nothing |
+| `sphilter/minimoth.py` | MiniMoth OTP client (send, verify, validate, refresh, logout) |
 | `sphilter/auth.py` | Officer accounts, password hashing, lockout, ward-based access, sign-in log |
 | `sphilter/audit.py` | SQLite audit trail (ingest, proposal, decision, rule, reason, outcome, latency) |
 | `sphilter/agents.py` | `GullibleMockAgent` (fooled on purpose) and `LLMAgent` adapter (`call_fn(prompt) -> JSON`) |
