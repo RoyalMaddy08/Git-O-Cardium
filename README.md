@@ -19,9 +19,21 @@ pip install -r requirements.txt
 pytest -q                    # tests
 python -m sphilter.demo A1   # terminal demo of the headline attack (try A8, A10, A13, B1)
 python -m sphilter.evaluate  # metrics -> results/report.md + results/metrics.json
-streamlit run app.py         # dashboard
+python -m sphilter.auth init # FIRST TIME ONLY: creates demo officers, prints random passwords once
+streamlit run app.py         # dashboard (officer sign-in required)
 ```
 Works offline. The default agent is a deterministic mock that *obeys* injected text, on purpose.
+
+## Officer login
+
+Only assigned officers can open the dashboard. There is no sign-up page.
+
+- `python -m sphilter.auth init` creates demo accounts (a supervisor and one officer per ward) with random passwords shown once.
+- `python -m sphilter.auth add <id> --name "..." --ward K-East` adds an officer (`--role supervisor` for all wards). `list` and `remove <id>` also exist.
+- Officers see only complaints from their own ward; supervisors see everything plus the sign-in activity log.
+- Passwords are stored as salted PBKDF2-SHA256 hashes in `data/officers.json` (git-ignored). 5 wrong tries lock that ID for 60 s. Sessions expire after 30 idle minutes. Removing an officer locks them out on their next click.
+- Every sign-in, failure, lock and sign-out is appended to `data/auth_log.jsonl`.
+- This is app-level demo auth. A real deployment should use SSO/OIDC over HTTPS.
 
 ## How it works
 
@@ -42,6 +54,7 @@ Complaint/email/PDF ─► Content items tagged UNTRUSTED ─► Agent (proposes
 | `sphilter/policy.py` | Rule chain: tool granted, typed args, resource scope, destination allowlist, call budget, approval, argument grounding |
 | `sphilter/gateway.py` | `SecureGateway` (policy + execute + audit) and `DirectGateway` (unprotected baseline) |
 | `sphilter/tools.py` | Simulated tools writing to an in-memory `World`, so tests can prove denied actions changed nothing |
+| `sphilter/auth.py` | Officer accounts, password hashing, lockout, ward-based access, sign-in log |
 | `sphilter/audit.py` | SQLite audit trail (ingest, proposal, decision, rule, reason, outcome, latency) |
 | `sphilter/agents.py` | `GullibleMockAgent` (fooled on purpose) and `LLMAgent` adapter (`call_fn(prompt) -> JSON`) |
 | `sphilter/scenarios.py` | 6 benign and 15 attack scenarios, task profiles |

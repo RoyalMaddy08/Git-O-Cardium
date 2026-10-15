@@ -1,7 +1,10 @@
 """SPHILTER-AI dashboard.  Run:  streamlit run app.py"""
 import html
+import time
 
 import streamlit as st
+
+from sphilter import auth
 
 from sphilter.evaluate import run_all, run_scenario, to_markdown
 from sphilter.scenarios import BY_ID, SCENARIOS, make_task
@@ -49,6 +52,9 @@ CSS = """
 .red {color: #DC2626;} .green {color: #16A34A;}
 .note {background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 12px; padding: 12px 16px; color: #78350F;}
 .small {color: #64748B; font-size: .88rem;}
+.login-card {background:#fff; border-radius:18px; padding:26px 28px 8px 28px; box-shadow:0 4px 18px rgba(0,0,0,.10);}
+.login-card h2 {margin:0 0 4px 0; color:#1F2937;}
+.userbar {background:#fff; border-radius:12px; padding:10px 16px; box-shadow:0 1px 3px rgba(0,0,0,.07); color:#1F2937;}
 </style>
 """
 
@@ -111,6 +117,78 @@ def pct(x):
 
 
 st.markdown(CSS, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------- login gate
+@st.cache_resource
+def get_throttle():
+    return auth.Throttle()
+
+
+def rerun():
+    (getattr(st, "rerun", None) or st.experimental_rerun)()
+
+
+def current_officer(store):
+    uid = st.session_state.get("uid")
+    if not uid:
+        return None
+    if time.time() - st.session_state.get("last_active", 0) > auth.IDLE_SECONDS:
+        auth.log_event(uid, "session_timeout", True)
+        st.session_state.clear()
+        st.session_state["flash"] = "Signed out after 30 minutes of inactivity."
+        return None
+    officer = store.get(uid)  # re-checked every run: removing an officer locks them out immediately
+    if officer is not None:
+        st.session_state["last_active"] = time.time()
+    return officer
+
+
+def login_page(store):
+    _, mid, _ = st.columns([1, 1.4, 1])
+    with mid:
+        st.markdown("<div class='login-card'><h2>🛡️ SPHILTER-AI</h2>"
+                    "<div class='small'>Officer sign-in. Access is limited to officers assigned by the department.</div></div>",
+                    unsafe_allow_html=True)
+        if not store.exists():
+            st.markdown("<div class='note' style='margin-top:12px'><b>No officers set up yet.</b><br>"
+                        "An administrator must run <code>python -m sphilter.auth init</code> once, then restart.</div>",
+                        unsafe_allow_html=True)
+            return
+        if st.session_state.get("flash"):
+            st.info(st.session_state.pop("flash"))
+        with st.form("login"):
+            uid = st.text_input("Officer ID")
+            pw = st.text_input("Password", type="password")
+            go = st.form_submit_button("Sign in")
+        if go:
+            officer, msg = auth.authenticate(store, get_throttle(), uid, pw)
+            if officer is None:
+                st.error(msg)
+            else:
+                st.session_state["uid"] = officer.id
+                st.session_state["last_active"] = time.time()
+                rerun()
+        st.markdown("<div class='small' style='margin-top:10px'>Forgot your password or need access? "
+                    "Contact your supervisor. All sign-ins are logged.</div>", unsafe_allow_html=True)
+
+
+store = auth.OfficerStore()
+officer = current_officer(store)
+if officer is None:
+    login_page(store)
+    st.stop()
+
+bar, out = st.columns([5, 1])
+with bar:
+    scope = "all wards" if officer.role == "supervisor" else f"Ward {officer.ward}"
+    st.markdown(f"<div class='userbar'>👤 <b>{html.escape(officer.name)}</b> &nbsp;·&nbsp; "
+                f"{html.escape(officer.role.title())} &nbsp;·&nbsp; {html.escape(scope)}</div>", unsafe_allow_html=True)
+with out:
+    if st.button("Sign out"):
+        auth.log_event(officer.id, "logout", True)
+        st.session_state.clear()
+        rerun()
 st.markdown(
     "<div class='hero'><h1>🛡️ SPHILTER-AI</h1>"
     "<p>AI agents can be tricked by hidden instructions inside the documents they read. "
@@ -122,8 +200,17 @@ st.markdown(
     "</div>", unsafe_allow_html=True)
 
 st.markdown("#### Pick a situation to try")
-sid = st.selectbox("Situation", [s.id for s in SCENARIOS], index=6, format_func=label, label_visibility="collapsed")
+allowed = auth.visible_scenarios(officer)
+ids = [s.id for s in allowed]
+if not ids:
+    st.warning("No complaints are assigned to your ward yet.")
+    st.stop()
+sid = st.selectbox("Situation", ids, index=ids.index("A1") if "A1" in ids else 0, format_func=label,
+                   label_visibility="collapsed")
 scn = BY_ID[sid]
+if not auth.can_view(officer, scn):  # defence in depth: never trust the widget value alone
+    st.error("You are not assigned to this complaint's ward.")
+    st.stop()
 base, prot = run_scenario(scn, "baseline"), run_scenario(scn, "protected")
 
 # ---------------------------------------------------------------- 1. what the agent reads
@@ -217,3 +304,8 @@ st.markdown("<div class='small' style='margin-top:18px'>All data is synthetic an
             "No real citizen data and no real government systems are used. The attacker in these tests is a "
             "simple stand-in agent that obeys hidden text; results show the design works, not how often a real "
             "AI is fooled.</div>", unsafe_allow_html=True)
+
+if officer.role == "supervisor":
+    with st.expander("Supervisor only: recent sign-in activity"):
+        st.dataframe([{"time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])), "user": r["user"],
+                       "event": r["event"], "success": r["ok"]} for r in auth.read_log(30)], hide_index=True)
