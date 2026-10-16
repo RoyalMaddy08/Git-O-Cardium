@@ -8,8 +8,8 @@
 | Attack-conditioned task completion rate | 86.7% | 93.3% |
 | False-positive rate (authorized actions denied) | 0.0% | 0.0% |
 | Audit coverage (proposals logged) | n/a (no audit) | 100.0% |
-| Policy latency, mean / p95 | n/a | 0.0104 ms / 0.0159 ms |
-| Whole-scenario wall time (mean of 200 reps) | 0.1021 ms | 0.3463 ms |
+| Policy latency, mean / p95 | n/a | 0.0121 ms / 0.0201 ms |
+| Whole-scenario wall time (mean of 200 reps) | 0.0797 ms | 0.2877 ms |
 
 ## Per scenario (protected agent)
 
