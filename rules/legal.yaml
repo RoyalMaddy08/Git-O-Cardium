@@ -1,0 +1,28 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Legal
+rule_id: LEG-001
+description: Every proposed action writes one audit row with the requested action, decision, rule, reason
+  and whether it executed. Retention follows a stated policy; no compliance claim is made.
+conditions:
+- One PROPOSAL row per proposed action, allowed or denied
+- executed flag equals what really happened
+action: n/a
+reason_codes:
+- TOOL_NOT_PERMITTED
+enforced_by: gateway.submit + audit.py. Rows record origin, exec_args and execution_outcome (EXECUTED,
+  EXECUTED_MODIFIED, BLOCKED, PENDING). rule_version and approver fields are not implemented.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - execution_outcome
+  - exec_args
+  - rule_version

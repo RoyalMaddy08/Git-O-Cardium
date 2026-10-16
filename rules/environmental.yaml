@@ -1,0 +1,28 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Environmental
+rule_id: ENV-001
+description: Each tool has a per-task call budget; calls over budget are refused, and a run halts after
+  5 consecutive denials.
+conditions:
+- calls per tool <= max_calls
+- consecutive denials < 5, else RUN_HALTED
+action: DENY
+reason_codes:
+- RATE_LIMIT
+- RUN_HALTED
+- TOOL_NOT_PERMITTED
+enforced_by: policy.py step 6; gateway MAX_CONSECUTIVE_DENIALS.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - tool
+  - call_count

@@ -1,0 +1,27 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Political
+rule_id: POL-001
+description: A complaint cannot be closed unless the task grants close_complaint; where the task requires
+  approval, the action is queued until a named officer approves. Complaint text cannot grant either.
+conditions:
+- close_complaint is granted by the trusted task
+- 'if requires_approval: decision is APPROVAL_REQUIRED, nothing executes'
+action: DENY
+reason_codes:
+- TOOL_NOT_PERMITTED
+- APPROVAL_REQUIRED
+enforced_by: policy.py steps 2 and 7. Approval step (approver id, approve action) is NOT implemented.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - complaint_id
+  - attempted_closure

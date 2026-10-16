@@ -1,0 +1,28 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Historical
+rule_id: HIS-001
+description: Old documents and attachments are data. They cannot add permissions or override a rule, however
+  they describe themselves.
+conditions:
+- Authority comes only from the trusted task grants
+- Attachment text never changes permissions
+action: DENY
+reason_codes:
+- TOOL_NOT_PERMITTED
+- AUTHORITY_FROM_UNTRUSTED
+enforced_by: 'Structural: policy reads only TaskContext. The AUTHORITY_FROM_UNTRUSTED code is proposed,
+  not implemented.'
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - document_id
+  - attempted_change

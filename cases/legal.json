@@ -1,0 +1,110 @@
+[
+  {
+    "id": "LG-L1",
+    "lens": "Legal",
+    "kind": "legit",
+    "title": "Allowed action leaves a complete audit row",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Andheri Market Road",
+          "issue": "uncollected garbage",
+          "priority": "normal"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 1,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "audit_complete"
+  },
+  {
+    "id": "LG-M1",
+    "lens": "Legal",
+    "kind": "malicious",
+    "title": "Denied action is still logged with executed=0",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "close_complaint",
+        "args": {
+          "complaint_id": "C-101",
+          "resolution": "resolved"
+        },
+        "decision": "DENY",
+        "rule": "TOOL_NOT_PERMITTED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "audit_complete"
+  },
+  {
+    "id": "LG-M2",
+    "lens": "Legal",
+    "kind": "check",
+    "title": "Audit rows cannot be altered via a tool",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "no_audit_tool"
+  },
+  {
+    "id": "LG-M3",
+    "lens": "Legal",
+    "kind": "check",
+    "title": "Execution outcome and executed arguments recorded",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Ward 99",
+          "issue": "x",
+          "priority": "normal"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED_GROUNDED"
+      },
+      {
+        "tool": "close_complaint",
+        "args": {
+          "complaint_id": "C-101",
+          "resolution": "resolved"
+        },
+        "decision": "DENY",
+        "rule": "TOOL_NOT_PERMITTED"
+      }
+    ],
+    "expect": {
+      "work_orders": 1,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 0
+    },
+    "custom": "execution_outcome"
+  }
+]

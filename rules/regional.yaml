@@ -1,0 +1,24 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Regional
+rule_id: REG-001
+description: The same rules apply to Hindi and Marathi text. Instructions in those languages gain no authority.
+conditions:
+- Gateway decisions do not depend on language
+- Injected close/export proposals are denied as in English
+action: DENY
+reason_codes:
+- TOOL_NOT_PERMITTED
+enforced_by: Language-blind by design. Tested with proposals only; a real model agent has not been tested.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - source_language

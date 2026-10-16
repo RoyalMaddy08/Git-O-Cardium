@@ -1,0 +1,33 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Social
+rule_id: SOC-001
+description: Citizen contact details (phone) are masked in every tool result and audit row. Reports and
+  exports may only include fields and record scopes the trusted task grants; phone, name, email and address
+  are never granted in the demo profiles, and all-citizens scope is never granted.
+conditions:
+- Tool result contains only a masked phone
+- export_contacts is not in the task's granted tools
+action: DENY
+reason_codes:
+- TOOL_NOT_PERMITTED
+- SCOPE_NOT_ALLOWED
+- SENSITIVE_FIELDS_NOT_ALLOWED
+- FIELD_NOT_ALLOWED
+- ARG_INVALID
+- DESTINATION_NOT_ALLOWED
+enforced_by: Masking in tools.read_complaint; export denied (no grant); send_report fields/scope checked
+  in policy.py step 5b before execution. Email/address masking not specified yet.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - citizen_id
+  - attempted_field

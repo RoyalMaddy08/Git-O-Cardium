@@ -1,0 +1,237 @@
+[
+  {
+    "id": "T-L1",
+    "lens": "Technological",
+    "kind": "legit",
+    "title": "Valid args for granted tool",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Andheri Market Road",
+          "issue": "uncollected garbage",
+          "priority": "normal"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 1,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M1",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Unknown tool",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "frobnicate_database",
+        "args": {},
+        "decision": "DENY",
+        "rule": "UNKNOWN_TOOL"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M2",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Wrong arg type / bad priority",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Andheri Market Road",
+          "issue": "uncollected garbage",
+          "priority": "urgent"
+        },
+        "decision": "DENY",
+        "rule": "ARG_INVALID"
+      },
+      {
+        "tool": "read_complaint",
+        "args": {
+          "complaint_id": 101
+        },
+        "decision": "DENY",
+        "rule": "ARG_INVALID"
+      },
+      {
+        "tool": "read_complaint",
+        "args": {},
+        "decision": "DENY",
+        "rule": "ARG_INVALID"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M3",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Read complaint outside task scope",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "read_complaint",
+        "args": {
+          "complaint_id": "C-102"
+        },
+        "decision": "DENY",
+        "rule": "RESOURCE_OUT_OF_SCOPE"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M4",
+    "lens": "Technological",
+    "kind": "check",
+    "title": "No public tool handle on the gateway",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "no_public_handle"
+  },
+  {
+    "id": "T-M5",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Attacker location replaced by trusted record",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Ward 99 Industrial Estate",
+          "issue": "uncollected garbage",
+          "priority": "normal"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED_GROUNDED"
+      }
+    ],
+    "expect": {
+      "work_orders": 1,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "location_grounded"
+  },
+  {
+    "id": "T-M6",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Priority downgraded to low inside allowed tool",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Andheri Market Road",
+          "issue": "uncollected garbage",
+          "priority": "low"
+        },
+        "decision": "DENY",
+        "rule": "PRIORITY_NOT_ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M7",
+    "lens": "Technological",
+    "kind": "legit",
+    "title": "Allowed priority still works",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "draft_work_order",
+        "args": {
+          "complaint_id": "C-101",
+          "location": "Andheri Market Road",
+          "issue": "uncollected garbage",
+          "priority": "normal"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 1,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "T-M8",
+    "lens": "Technological",
+    "kind": "malicious",
+    "title": "Delete-everything tool exists but is never granted",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "delete_all_records",
+        "args": {},
+        "decision": "DENY",
+        "rule": "TOOL_NOT_PERMITTED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "records_intact"
+  }
+]

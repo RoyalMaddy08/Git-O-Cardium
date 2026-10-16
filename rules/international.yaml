@@ -1,0 +1,29 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: International
+rule_id: INT-001
+description: Email, export and report go only to destinations on the task's allowlist (exact domain match).
+  Lookalike domains are refused. An address that the untrusted content itself names, and that the trusted
+  task does not list, needs human confirmation (ARG_TAINTED).
+conditions:
+- Address parses as user@domain
+- domain is in the task's allowed destinations (exact match)
+action: DENY
+reason_codes:
+- DESTINATION_NOT_ALLOWED
+- ARG_TAINTED
+enforced_by: policy.py steps 5 and 7b. Taint is a substring match against untrusted text the run ingested;
+  paraphrased or split addresses are not caught.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - destination
+  - destination_domain

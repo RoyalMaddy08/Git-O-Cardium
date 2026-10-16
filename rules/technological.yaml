@@ -1,0 +1,33 @@
+# Rule spec for this lens. DOCUMENTATION ONLY: the gateway does not read this file.
+# Enforcement lives in sphilter/policy.py and gateway.py (see enforced_by).
+lens: Technological
+rule_id: TEC-001
+description: Every side effect passes through the gateway; arguments are validated against a strict schema;
+  each task gets only the tools it needs; priority is limited to the task's allowed values.
+conditions:
+- tool is registered
+- tool is granted by the task
+- args pass the typed schema
+- complaint id is in scope
+- priority is in the task's allowed list
+action: DENY
+reason_codes:
+- UNKNOWN_TOOL
+- TOOL_NOT_PERMITTED
+- ARG_INVALID
+- RESOURCE_OUT_OF_SCOPE
+- PRIORITY_NOT_ALLOWED
+enforced_by: policy.py steps 1-4b. Name-mangling is not a sandbox; bypass hardening not done.
+audit:
+  log_fields:
+  - request_id
+  - user_id
+  - timestamp
+  - lens
+  - decision
+  - reason
+  - matched_rule_id
+  - payload_snapshot
+  db_fields:
+  - tool
+  - validation_error
